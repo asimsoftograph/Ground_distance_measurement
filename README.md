@@ -12,6 +12,8 @@
 
 
 🤖 Models Used
+
+
 -> poster_model.pt: YOLOv8 model trained on poster/ad dataset
 
 -> ground_segmentation_model.pt: YOLOv8-seg 

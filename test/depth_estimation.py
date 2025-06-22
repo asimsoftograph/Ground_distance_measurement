@@ -8,8 +8,8 @@ import torchvision.transforms as T
 from ultralytics import YOLO
 
 # Load models
-ground_model = YOLO('F:/softograph/ground_distance/model/segment_ground_yolov8_nano.pt')
-poster_model = YOLO('F:/softograph/ground_distance/model/new_grid_poster_m.pt')
+ground_model = YOLO('F:/softograph/ground_distance/models/segment_ground_yolov8_nano.pt')
+poster_model = YOLO('F:/softograph/ground_distance/models/new_grid_poster_m.pt')
 
 # Load MiDaS model for depth estimation
 midas = torch.hub.load("intel-isl/MiDaS", "DPT_Large")
@@ -49,33 +49,34 @@ class PosterGroundApp:
     def process_and_display(self, image):
       h, w = image.shape[:2]
 
-    # Ground Segmentation
+        # Ground Segmentation
       ground_result = ground_model.predict(image, imgsz=640, conf=0.4, verbose=False)[0]
       ground_mask = None
       if ground_result.masks is not None:
-        mask_data = ground_result.masks.data[0].cpu().numpy()
-        ground_mask = cv2.resize(mask_data.astype(np.uint8), (w, h), interpolation=cv2.INTER_NEAREST)
-        ground_overlay = np.zeros_like(image, dtype=np.uint8)
-        ground_overlay[ground_mask == 1] = (0, 255, 0)  # Green
-        alpha = 0.4
-        image = cv2.addWeighted(ground_overlay, alpha, image, 1 - alpha, 0)
+            mask_data = ground_result.masks.data[0].cpu().numpy()
+            ground_mask = cv2.resize(mask_data.astype(np.uint8), (w, h), interpolation=cv2.INTER_NEAREST)
+            ground_overlay = np.zeros_like(image, dtype=np.uint8)
+            ground_overlay[ground_mask == 1] = (0, 255, 0)  # Green
+            alpha = 0.4
+            image = cv2.addWeighted(ground_overlay, alpha, image, 1 - alpha, 0)
 
     # Depth Estimation
       depth_map = estimate_depth(self.original)
-      depth_map = cv2.resize(depth_map, (w, h))  # Ensure same size as image
 
     # Poster Detection
       poster_result = poster_model.predict(self.original, imgsz=640, conf=0.4, verbose=False)[0]
 
+
+
       for box in poster_result.boxes:
-         x1, y1, x2, y2 = map(int, box.xyxy[0].tolist())
-         cv2.rectangle(image, (x1, y1), (x2, y2), (0, 0, 255), 2)
+        x1, y1, x2, y2 = map(int, box.xyxy[0].tolist())
+        cv2.rectangle(image, (x1, y1), (x2, y2), (0, 0, 255), 2)
 
-         bottom_left = (x1, y2)
-         bottom_right = (x2, y2)
+        bottom_left = (x1, y2)
+        bottom_right = (x2, y2)
 
-         for label, point in [("L", bottom_left), ("R", bottom_right)]:
-            px, py = point    #  px and py are the pixel coordinates of the poster's bottom left and right corners
+        for label, point in [("L", bottom_left), ("R", bottom_right)]:
+            px, py = point
 
             if ground_mask is None or py >= h or px >= w:
                 continue  # Skip invalid cases
@@ -85,18 +86,11 @@ class PosterGroundApp:
             except:
                 poster_depth = 0
 
+            # Search ground pixel directly below poster bottom
             ground_y = None
-            original_px = px
-            window = 5  # Search ±5 pixels horizontally
-
             for y in range(py, h):
-                for dx in range(-window, window + 1):
-                    nx = px + dx
-                    if 0 <= nx < w and ground_mask[y, nx] == 1:
-                        ground_y = y
-                        px = nx  # Update px to ground pixel's x
-                        break
-                if ground_y is not None:
+                if ground_mask[y, px] == 1:
+                    ground_y = y
                     break
 
             if ground_y is not None:
@@ -108,21 +102,23 @@ class PosterGroundApp:
                     pixel_dist = 0
                     real_dist = 0
 
+          
+
                 cv2.line(image, point, (px, ground_y), (255, 255, 0), 2)
-                cv2.putText(image, f"PxDist: {pixel_dist}px", (original_px, py + 20),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
-                cv2.putText(image, f"Real_Dist : {real_dist:.2f}m", (original_px, py + 40),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+                cv2.putText(image, f"PxDist: {pixel_dist}px", (px, py + 20),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+                cv2.putText(image, f"Real_Dist : {real_dist:.2f}m", (px, py + 40),
+                             cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+
             else:
                 cv2.putText(image, f"{label}: Ground Not Found", (px, py + 20),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
-
-    # Show in GUI
-      img_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-      pil_img = Image.fromarray(img_rgb).resize((800, 600))
-      self.tk_img = ImageTk.PhotoImage(image=pil_img)
-      self.canvas.create_image(0, 0, anchor=tk.NW, image=self.tk_img)
-
+     
+        # Show in GUI
+        img_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        pil_img = Image.fromarray(img_rgb).resize((800, 600))
+        self.tk_img = ImageTk.PhotoImage(image=pil_img)
+        self.canvas.create_image(0, 0, anchor=tk.NW, image=self.tk_img)
 
 # Launch GUI
 if __name__ == "__main__":
